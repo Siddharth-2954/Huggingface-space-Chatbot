@@ -1,3 +1,19 @@
+---
+title: Groq Chatbot Query App
+emoji: 🤖
+colorFrom: blue
+colorTo: green
+sdk: streamlit
+sdk_version: "1.48.1"
+python_version: "3.11"
+app_file: rag_pdf.py
+pinned: false
+---
+
+# Groq Chatbot Query App
+
+A Streamlit chatbot powered by Groq and LangChain.
+
 # PART 1 — PDF Ingestion & Preprocessing
 
 # File Structure
