@@ -4,6 +4,7 @@ from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
+import os
 from langchain_chroma import Chroma
 from langchain.prompts.chat import (
     ChatPromptTemplate,
@@ -15,7 +16,6 @@ from langchain.chains import (create_retrieval_chain, create_history_aware_retri
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.runnables.history import RunnableWithMessageHistory
-from transformers import AutoTokenizer
 
 load_dotenv()
 
@@ -52,9 +52,15 @@ if api_key:
         splits = splitter.split_documents(documents)
         st.success(f"Created {len(splits)} chunks")
 
-        st.write("Loading embeddings...")
+        st.write("Loading embeddings (via HuggingFace Inference API)...")
+        hf_token = os.environ.get("HUGGINGFACEHUB_API_TOKEN") or os.environ.get("HUGGINGFACE_TOKEN")
+        if not hf_token:
+            st.error("HUGGINGFACEHUB_API_TOKEN not found. Set the token in your Space secrets as `HUGGINGFACEHUB_API_TOKEN`.")
+            st.stop()
+
         embeddings = HuggingFaceEmbeddings(
-            model_name="sentence-transformers/all-MiniLM-L6-v2"
+            model_name="sentence-transformers/all-MiniLM-L6-v2",
+            huggingfacehub_api_token=hf_token,
         )
         st.success("Embeddings loaded")
 
@@ -95,8 +101,11 @@ if api_key:
         retrieval_chain = create_retrieval_chain(history_aware_retriever, document_chain)
 
         
-        tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
-        
+        # We avoid importing heavy `transformers` on Spaces by using a simple token estimate.
+        def estimate_tokens(text: str) -> int:
+            # crude estimate: 1 token ~ 0.75 words, but we'll approximate with words
+            return max(1, len(text.split()))
+
         MAX_TOKENS = 1200
 
         MAX_MESSAGES = 6
@@ -107,7 +116,7 @@ if api_key:
             trimmed_history = []
 
             for message in reversed(history.messages):
-                tokens = len(tokenizer.encode(message.content))
+                tokens = estimate_tokens(message.content)
                 if total_tokens + tokens > MAX_TOKENS:
                     break
 
