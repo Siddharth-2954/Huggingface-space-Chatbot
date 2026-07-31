@@ -4,18 +4,14 @@ from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
-import os
 from langchain_chroma import Chroma
-from langchain.prompts.chat import (
-    ChatPromptTemplate,
-    SystemMessagePromptTemplate,
-    HumanMessagePromptTemplate,
-    MessagesPlaceholder,
-)
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain.chains import (create_retrieval_chain, create_history_aware_retriever)
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.runnables.history import RunnableWithMessageHistory
+from transformers import AutoTokenizer
 
 load_dotenv()
 
@@ -40,49 +36,23 @@ if api_key:
         
         # Load PDF
         loader = PyPDFLoader(temp_pdf)
-        st.write("Loading PDF...")
         documents = loader.load()
-        st.success(f"Loaded {len(documents)} pages")
-
-    
+        
+        # Debug: checking if PDF loaded correctly 
+        print(f"PDF loaded with {len(documents)} pages")
+        
         # Split text into chunks
         splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
-
-        st.write("Splitting...")
-        splits = splitter.split_documents(documents)
-        st.success(f"Created {len(splits)} chunks")
-
-        st.write("Loading embeddings (via HuggingFace Inference API)...")
-        hf_token = os.environ.get("HUGGINGFACEHUB_API_TOKEN") or os.environ.get("HUGGINGFACE_TOKEN")
-        if not hf_token:
-            st.error("HUGGINGFACEHUB_API_TOKEN not found. Set the token in your Space secrets as `HUGGINGFACEHUB_API_TOKEN`.")
-            st.stop()
-
-        embeddings = HuggingFaceEmbeddings(
-            model_name="sentence-transformers/all-MiniLM-L6-v2",
-            huggingfacehub_api_token=hf_token,
-        )
-        st.success("Embeddings loaded")
-
-        st.write("Creating Chroma DB...")
-        vector = Chroma.from_documents(
-            splits,
-            embedding=embeddings
-        )
-
-        st.success("Vector DB created")
         
+        splits = splitter.split_documents(documents)
+        vector = Chroma.from_documents(splits, embedding=HuggingFaceEmbeddings(), persist_directory="./chroma_datab")
         retriever = vector.as_retriever()
 
         # Code for storing history
 
         contextualize_system_prompt= '''Given a chat history and the latest user question, reforumlate the question to make it standalone. Do not answer only rephrase.'''
 
-        contextualize_prompt = ChatPromptTemplate.from_messages([
-            SystemMessagePromptTemplate.from_template(contextualize_system_prompt),
-            MessagesPlaceholder(variable_name='chat_history'),
-            HumanMessagePromptTemplate.from_template('{input}'),
-        ])
+        contextualize_prompt = ChatPromptTemplate.from_messages([('system', contextualize_system_prompt), MessagesPlaceholder('chat_history'), ('human', '{input}')])
 
         history_aware_retriever = create_history_aware_retriever(model, retriever, contextualize_prompt)
 
@@ -90,22 +60,15 @@ if api_key:
         {context}
         '''
 
-        qa_prompt = ChatPromptTemplate.from_messages([
-            SystemMessagePromptTemplate.from_template(system_prompt),
-            MessagesPlaceholder(variable_name='chat_history'),
-            HumanMessagePromptTemplate.from_template('{input}'),
-        ])
+        qa_prompt = ChatPromptTemplate.from_messages([('system', system_prompt), MessagesPlaceholder('chat_history'), ('human', '{input}')])
 
         document_chain = create_stuff_documents_chain(model, qa_prompt)
 
         retrieval_chain = create_retrieval_chain(history_aware_retriever, document_chain)
 
         
-        # We avoid importing heavy `transformers` on Spaces by using a simple token estimate.
-        def estimate_tokens(text: str) -> int:
-            # crude estimate: 1 token ~ 0.75 words, but we'll approximate with words
-            return max(1, len(text.split()))
-
+        tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
+        
         MAX_TOKENS = 1200
 
         MAX_MESSAGES = 6
@@ -116,7 +79,7 @@ if api_key:
             trimmed_history = []
 
             for message in reversed(history.messages):
-                tokens = estimate_tokens(message.content)
+                tokens = len(tokenizer.encode(message.content))
                 if total_tokens + tokens > MAX_TOKENS:
                     break
 
