@@ -11,7 +11,7 @@ from langchain.chains import (create_retrieval_chain, create_history_aware_retri
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.runnables.history import RunnableWithMessageHistory
-from transformers import AutoTokenizer
+
 
 load_dotenv()
 
@@ -36,16 +36,32 @@ if api_key:
         
         # Load PDF
         loader = PyPDFLoader(temp_pdf)
+        st.write("Loading PDF...")
         documents = loader.load()
-        
-        # Debug: checking if PDF loaded correctly 
-        print(f"PDF loaded with {len(documents)} pages")
-        
+        st.success(f"Loaded {len(documents)} pages")
+
+    
         # Split text into chunks
         splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
-        
+
+        st.write("Splitting...")
         splits = splitter.split_documents(documents)
-        vector = Chroma.from_documents(splits, embedding=HuggingFaceEmbeddings(), persist_directory="./chroma_datab")
+        st.success(f"Created {len(splits)} chunks")
+
+        st.write("Loading embeddings...")
+        embeddings = HuggingFaceEmbeddings(
+            model_name="sentence-transformers/all-MiniLM-L6-v2"
+        )
+        st.success("Embeddings loaded")
+
+        st.write("Creating Chroma DB...")
+        vector = Chroma.from_documents(
+            splits,
+            embedding=embeddings
+        )
+
+        st.success("Vector DB created")
+        
         retriever = vector.as_retriever()
 
         # Code for storing history
