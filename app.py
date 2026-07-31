@@ -36,32 +36,16 @@ if api_key:
         
         # Load PDF
         loader = PyPDFLoader(temp_pdf)
-        st.write("Loading PDF...")
         documents = loader.load()
-        st.success(f"Loaded {len(documents)} pages")
-
-    
+        
+        # Debug: checking if PDF loaded correctly 
+        print(f"PDF loaded with {len(documents)} pages")
+        
         # Split text into chunks
         splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
-
-        st.write("Splitting...")
-        splits = splitter.split_documents(documents)
-        st.success(f"Created {len(splits)} chunks")
-
-        st.write("Loading embeddings...")
-        embeddings = HuggingFaceEmbeddings(
-            model_name="sentence-transformers/all-MiniLM-L6-v2"
-        )
-        st.success("Embeddings loaded")
-
-        st.write("Creating Chroma DB...")
-        vector = Chroma.from_documents(
-            splits,
-            embedding=embeddings
-        )
-
-        st.success("Vector DB created")
         
+        splits = splitter.split_documents(documents)
+        vector = Chroma.from_documents(splits, embedding=HuggingFaceEmbeddings(), persist_directory="./chroma_datab")
         retriever = vector.as_retriever()
 
         # Code for storing history
