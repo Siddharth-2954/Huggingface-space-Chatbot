@@ -6,7 +6,7 @@ colorTo: green
 sdk: streamlit
 sdk_version: "1.48.1"
 python_version: "3.11"
-app_file: rag_pdf.py
+app_file: app.py
 pinned: false
 ---
 
