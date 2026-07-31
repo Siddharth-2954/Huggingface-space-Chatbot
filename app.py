@@ -5,8 +5,12 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain.prompts.chat import (
+    ChatPromptTemplate,
+    SystemMessagePromptTemplate,
+    HumanMessagePromptTemplate,
+    MessagesPlaceholder,
+)
 from langchain.chains import (create_retrieval_chain, create_history_aware_retriever)
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_community.chat_message_histories import ChatMessageHistory
@@ -36,23 +40,43 @@ if api_key:
         
         # Load PDF
         loader = PyPDFLoader(temp_pdf)
+        st.write("Loading PDF...")
         documents = loader.load()
-        
-        # Debug: checking if PDF loaded correctly 
-        print(f"PDF loaded with {len(documents)} pages")
-        
+        st.success(f"Loaded {len(documents)} pages")
+
+    
         # Split text into chunks
         splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
-        
+
+        st.write("Splitting...")
         splits = splitter.split_documents(documents)
-        vector = Chroma.from_documents(splits, embedding=HuggingFaceEmbeddings(), persist_directory="./chroma_datab")
+        st.success(f"Created {len(splits)} chunks")
+
+        st.write("Loading embeddings...")
+        embeddings = HuggingFaceEmbeddings(
+            model_name="sentence-transformers/all-MiniLM-L6-v2"
+        )
+        st.success("Embeddings loaded")
+
+        st.write("Creating Chroma DB...")
+        vector = Chroma.from_documents(
+            splits,
+            embedding=embeddings
+        )
+
+        st.success("Vector DB created")
+        
         retriever = vector.as_retriever()
 
         # Code for storing history
 
         contextualize_system_prompt= '''Given a chat history and the latest user question, reforumlate the question to make it standalone. Do not answer only rephrase.'''
 
-        contextualize_prompt = ChatPromptTemplate.from_messages([('system', contextualize_system_prompt), MessagesPlaceholder('chat_history'), ('human', '{input}')])
+        contextualize_prompt = ChatPromptTemplate.from_messages([
+            SystemMessagePromptTemplate.from_template(contextualize_system_prompt),
+            MessagesPlaceholder(variable_name='chat_history'),
+            HumanMessagePromptTemplate.from_template('{input}'),
+        ])
 
         history_aware_retriever = create_history_aware_retriever(model, retriever, contextualize_prompt)
 
@@ -60,7 +84,11 @@ if api_key:
         {context}
         '''
 
-        qa_prompt = ChatPromptTemplate.from_messages([('system', system_prompt), MessagesPlaceholder('chat_history'), ('human', '{input}')])
+        qa_prompt = ChatPromptTemplate.from_messages([
+            SystemMessagePromptTemplate.from_template(system_prompt),
+            MessagesPlaceholder(variable_name='chat_history'),
+            HumanMessagePromptTemplate.from_template('{input}'),
+        ])
 
         document_chain = create_stuff_documents_chain(model, qa_prompt)
 
